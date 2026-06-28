@@ -207,6 +207,24 @@
       "price": "220.00",
       "status": "3",
       "event": "ET00489559"
+    },
+    "ET00480914|INMB|71856|20260628|PRIME": {
+      "venue": "INOX: Mantri Square, Malleshwaram",
+      "time": "07:35 PM",
+      "date": "20260628",
+      "cat": "PRIME",
+      "price": "850.00",
+      "status": "2",
+      "event": "ET00480914"
+    },
+    "ET00480914|INMB|71856|20260628|CLASSIC": {
+      "venue": "INOX: Mantri Square, Malleshwaram",
+      "time": "07:35 PM",
+      "date": "20260628",
+      "cat": "CLASSIC",
+      "price": "800.00",
+      "status": "3",
+      "event": "ET00480914"
     }
   },
   "dates": {
@@ -236,6 +254,13 @@
     "ET00489559|20260701": "AVAILABLE",
     "ET00489559|20260702": "AVAILABLE",
     "ET00489559|20260703": "NOT_OPEN",
-    "ET00489559|20260704": "NOT_OPEN"
+    "ET00489559|20260704": "NOT_OPEN",
+    "ET00480914|20260628": "BOOKABLE",
+    "ET00480914|20260629": "AVAILABLE",
+    "ET00480914|20260630": "AVAILABLE",
+    "ET00480914|20260701": "AVAILABLE",
+    "ET00480914|20260702": "NOT_OPEN",
+    "ET00480914|20260703": "NOT_OPEN",
+    "ET00480914|20260704": "NOT_OPEN"
   }
 }
