@@ -1,7 +1,6 @@
 """
-BMS Ticket Checker — CI/Headless mode for GitHub Actions.
-Runs once, checks all configured watches, sends alerts via Telegram on changes.
-State is persisted via a JSON artifact.
+BMS Multi-Ticket Checker — CI/Headless mode for GitHub Actions.
+Supports multiple comma-separated URLs and multiple theatres.
 """
 
 import os
@@ -19,12 +18,10 @@ from curl_cffi import requests as browser
 # CONFIGURATION — set via GitHub Secrets / Variables
 # ──────────────────────────────────────────────────────────────────────
 CONFIG = {
-    "url": os.getenv(
-        "BMS_URL",
-        "https://in.bookmyshow.com/movies/chennai/dhurandhar-the-revenge/buytickets/ET00478890"
-    ),
+    # Can now be a comma-separated list of multiple BookMyShow URLs
+    "url": os.getenv("BMS_URL", ""),
     "dates": os.getenv("BMS_DATES", ""),          # comma-separated YYYYMMDD, empty = from URL
-    "theatre": os.getenv("BMS_THEATRE", ""),       # substring filter, empty = all
+    "theatre": os.getenv("BMS_THEATRE", ""),       # comma-separated theatre names (e.g., "AMB,Prasads")
     "time_period": os.getenv("BMS_TIME", ""),      # e.g. "evening,night", empty = all
 }
 
@@ -70,9 +67,6 @@ REGION_MAP = {
 }
 
 
-# ──────────────────────────────────────────────────────────────────────
-# DATA
-# ──────────────────────────────────────────────────────────────────────
 @dataclass
 class CatInfo:
     name: str
@@ -96,9 +90,6 @@ class DateInfo:
     status: str
 
 
-# ──────────────────────────────────────────────────────────────────────
-# URL PARSER + REGION RESOLVER
-# ──────────────────────────────────────────────────────────────────────
 def parse_bms_url(url):
     path = urlparse(url).path.strip("/")
     parts = path.split("/")
@@ -122,29 +113,15 @@ def resolve_region(slug):
     return (key.upper()[:6], key, "0", "0", "")
 
 
-# ──────────────────────────────────────────────────────────────────────
-# BMS API
-# ──────────────────────────────────────────────────────────────────────
-API_URL = (
-    "https://in.bookmyshow.com/api/movies-data/v4/"
-    "showtimes-by-event/primary-dynamic"
-)
+API_URL = "https://in.bookmyshow.com/api/movies-data/v4/showtimes-by-event/primary-dynamic"
 
 
-def fetch_bms(event_code, date_code, region_code, region_slug,
-              lat, lon, geohash):
+def fetch_bms(event_code, date_code, region_code, region_slug, lat, lon, geohash, movie_url):
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/145.0.0.0 Safari/537.36"
-        ),
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
-        "Referer": (
-            f"https://in.bookmyshow.com/movies/"
-            f"{region_slug}/buytickets/{event_code}/"
-        ),
+        "Referer": movie_url,
         "x-app-code": "WEB",
         "x-region-code": region_code,
         "x-region-slug": region_slug,
@@ -162,7 +139,6 @@ def fetch_bms(event_code, date_code, region_code, region_slug,
         "lat": lat, "lon": lon,
     }
     try:
-        # Utilizing curl_cffi requests layout to impersonate Chrome client TLS fingerprint
         resp = browser.get(API_URL, headers=headers, params=params, timeout=15, impersonate="chrome")
         if resp.status_code == 200:
             return resp.json()
@@ -172,9 +148,6 @@ def fetch_bms(event_code, date_code, region_code, region_slug,
     return None
 
 
-# ──────────────────────────────────────────────────────────────────────
-# PARSERS
-# ──────────────────────────────────────────────────────────────────────
 def parse_movie_info(data):
     info = {"name": "Unknown Movie", "language": ""}
     for w in data.get("data", {}).get("topStickyWidgets", []):
@@ -226,10 +199,7 @@ def parse_shows(data):
 
                 for st in card.get("showtimes", []):
                     sa = st.get("additionalData", {})
-                    date_code = str(
-                        sa.get("showDateCode", "")
-                        or sa.get("dateCode", "")
-                    ).strip()
+                    date_code = str(sa.get("showDateCode", "") or sa.get("dateCode", "")).strip()
                     if not date_code and re.match(r"^\d{8}", sa.get("cutOffDateTime", "")):
                         date_code = sa["cutOffDateTime"][:8]
 
@@ -252,9 +222,6 @@ def parse_shows(data):
     return shows
 
 
-# ──────────────────────────────────────────────────────────────────────
-# FILTERING
-# ──────────────────────────────────────────────────────────────────────
 def filter_shows(shows, theatre_filter, time_periods, date_codes):
     result = []
     kws = [k.strip().lower() for k in theatre_filter.split(",") if k.strip()] if theatre_filter else []
@@ -286,9 +253,6 @@ def filter_shows(shows, theatre_filter, time_periods, date_codes):
     return result
 
 
-# ──────────────────────────────────────────────────────────────────────
-# STATE MANAGEMENT
-# ──────────────────────────────────────────────────────────────────────
 def load_state():
     try:
         with open(STATE_FILE) as f:
@@ -302,73 +266,80 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
-def build_state(shows, dates):
-    show_state = {}
+def append_to_state(global_state, event_code, shows, dates):
+    """Appends data for a specific movie into the centralized state tracking dictionary."""
+    if "shows" not in global_state:
+        global_state["shows"] = {}
+    if "dates" not in global_state:
+        global_state["dates"] = {}
+
     for s in shows:
         for c in s.categories:
-            key = f"{s.venue_code}|{s.session_id}|{s.date_code}|{c.name}"
-            show_state[key] = {
+            # Prepend event_code to ensure key uniqueness across multiple movies
+            key = f"{event_code}|{s.venue_code}|{s.session_id}|{s.date_code}|{c.name}"
+            global_state["shows"][key] = {
                 "venue": s.venue_name,
                 "time": s.time,
                 "date": s.date_code,
                 "cat": c.name,
                 "price": c.price,
                 "status": c.status,
+                "event": event_code
             }
-    date_state = {d.date_code: d.status for d in dates}
-    return {"shows": show_state, "dates": date_state}
+            
+    for d in dates:
+        date_key = f"{event_code}|{d.date_code}"
+        global_state["dates"][date_key] = d.status
 
 
-def detect_changes(old_state, new_state):
+def detect_movie_changes(old_state, new_state, event_code):
     changes = []
-    old_dates = old_state.get("dates", {})
-    new_dates = new_state.get("dates", {})
+    
+    # Filter dates and shows specific to this movie context
+    old_dates = {k.split("|")[1]: v for k, v in old_state.get("dates", {}).items() if k.startswith(f"{event_code}|")}
+    new_dates = {k.split("|")[1]: v for k, v in new_state.get("dates", {}).items() if k.startswith(f"{event_code}|")}
+    
     for dc, status in new_dates.items():
         old_status = old_dates.get(dc)
         if old_status == "NOT_OPEN" and status in ("BOOKABLE", "AVAILABLE"):
             changes.append(f"📅 NEW DATE OPENED: {dc}")
 
-    old_shows = old_state.get("shows", {})
-    new_shows = new_state.get("shows", {})
+    old_shows = {k: v for k, v in old_state.get("shows", {}).items() if v.get("event") == event_code}
+    new_shows = {k: v for k, v in new_state.get("shows", {}).items() if v.get("event") == event_code}
 
     for key in set(new_shows) - set(old_shows):
         s = new_shows[key]
-        changes.append(f"🆕 NEW: {s['venue']} {s['time']} [{s['date']}] — {s['cat']} ₹{s['price']}")
+        changes.append(f"🆕 NEW SHOW: {s['venue']} {s['time']} [{s['date']}] — {s['cat']} ₹{s['price']}")
 
     for key, new_s in new_shows.items():
         old_s = old_shows.get(key)
         if old_s and old_s["status"] == "0" and new_s["status"] != "0":
             _, ico = AVAIL_STATUS_MAP.get(new_s["status"], ("UNKNOWN", "⚪"))
-            changes.append(f"{ico} BACK: {new_s['venue']} {new_s['time']} [{new_s['date']}]")
+            changes.append(f"{ico} SEATS AVAILABLE AGAIN: {new_s['venue']} {new_s['time']} [{new_s['date']}]")
 
     return changes
 
 
-# ──────────────────────────────────────────────────────────────────────
-# TELEGRAM NOTIFICATION
-# ──────────────────────────────────────────────────────────────────────
-def send_telegram_message(subject, changes, shows, movie_info):
+def send_telegram_message(changes, movie_info, movie_url):
     bot_token = TELEGRAM_BOT_TOKEN.strip()
     chat_id = TELEGRAM_CHAT_ID.strip()
 
     if not bot_token or not chat_id:
-        print("  ⚠️  Skipping Telegram — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set.")
+        print("  ⚠️  Skipping Telegram — Token or Chat ID not configured.")
         return
 
     now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
     movie_name = movie_info.get("name", "Movie")
-    movie_url = CONFIG["url"]
 
     message = f"🚨 <b>BMS Alert: {escape(movie_name)}</b>\n"
     message += f"🕒 <i>{now_str}</i>\n\n"
 
-    if changes:
-        message += "<b>Changes Detected:</b>\n"
-        for c in changes[:15]:
-            message += f"• {escape(c)}\n"
-        if len(changes) > 15:
-            message += f"• ...and {len(changes)-15} more.\n"
-        message += "\n"
+    message += "<b>Changes Detected:</b>\n"
+    for c in changes[:15]:
+        message += f"• {escape(c)}\n"
+    if len(changes) > 15:
+        message += f"• ...and {len(changes)-15} more.\n"
+    message += "\n"
 
     message += f"🔗 <a href='{movie_url}'>Book Tickets Here</a>"
 
@@ -382,89 +353,91 @@ def send_telegram_message(subject, changes, shows, movie_info):
         }
         resp = requests.post(url, json=payload, timeout=15)
         if resp.status_code == 200:
-            print("  ✅ Telegram alert sent successfully!")
+            print(f"  ✅ Telegram alert sent for {movie_name}!")
         else:
             print(f"  ❌ Telegram API Error {resp.status_code}: {resp.text}")
-            sys.exit(1)
-    except requests.RequestException as e:
+    except Exception as e:
         print(f"  ❌ Telegram request failed: {e}")
-        sys.exit(1)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# MAIN EXECUTION
-# ──────────────────────────────────────────────────────────────────────
 def main():
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{now_str}] BMS Ticket Checker — CI mode")
+    print(f"[{now_str}] BMS Multi-Ticket Checker Active")
 
-    parsed = parse_bms_url(CONFIG["url"])
-    event_code = parsed["event_code"]
-    region_slug = parsed["region_slug"]
-    url_date = parsed.get("date_code", "")
-
-    if not event_code or not region_slug:
-        print("  ❌ Invalid BMS_URL. Could not extract event/region.")
+    # Split the input string into separate URLs
+    urls = [u.strip() for u in CONFIG["url"].split(",") if u.strip()]
+    if not urls:
+        print("  ❌ No URLs found in BMS_URL environment variable.")
         sys.exit(1)
 
-    region_code, region_slug_r, lat, lon, geohash = resolve_region(region_slug)
+    old_state = load_state()
+    new_state = {"shows": {}, "dates": {}}
 
-    raw_dates = CONFIG["dates"].strip()
-    if raw_dates:
-        date_list = [d.strip() for d in raw_dates.split(",") if d.strip()]
-    elif url_date:
-        date_list = [url_date]
-    else:
-        date_list = [""]
+    # Preserve historical states for other tracking entries not currently called in this execution list
+    if old_state:
+        new_state["shows"].update(old_state.get("shows", {}))
+        new_state["dates"].update(old_state.get("dates", {}))
 
-    print(f"  Event: {event_code}  Region: {region_code}  Dates: {date_list}")
+    for movie_url in urls:
+        print(f"\nProcessing Movie Link: {movie_url}")
+        parsed = parse_bms_url(movie_url)
+        event_code = parsed["event_code"]
+        region_slug = parsed["region_slug"]
+        url_date = parsed.get("date_code", "")
 
-    all_shows = []
-    all_dates = []
-    movie_info = {"name": "Unknown", "language": ""}
-
-    for dc in date_list:
-        data = fetch_bms(event_code, dc, region_code, region_slug_r, lat, lon, geohash)
-        if not data:
-            print(f"  ⚠️  No data for date {dc or '(default)'}")
+        if not event_code or not region_slug:
+            print(f"  ⚠️ Skipping invalid URL configuration layout.")
             continue
 
-        if movie_info["name"] == "Unknown":
-            movie_info = parse_movie_info(data)
+        region_code, region_slug_r, lat, lon, geohash = resolve_region(region_slug)
 
-        all_dates.extend(parse_dates(data))
-        all_shows.extend(parse_shows(data))
+        raw_dates = CONFIG["dates"].strip()
+        if raw_dates:
+            date_list = [d.strip() for d in raw_dates.split(",") if d.strip()]
+        elif url_date:
+            date_list = [url_date]
+        else:
+            date_list = [""]
 
-    if not all_shows:
-        print("  ❌ No showtimes found.")
-        sys.exit(0)
+        movie_shows = []
+        movie_dates = []
+        movie_info = {"name": "Unknown", "language": ""}
 
-    print(f"  🎬 {movie_info['name']}  {movie_info['language']}")
+        for dc in date_list:
+            data = fetch_bms(event_code, dc, region_code, region_slug_r, lat, lon, geohash, movie_url)
+            if not data:
+                continue
 
-    filtered = filter_shows(all_shows, CONFIG["theatre"], CONFIG["time_period"], CONFIG["dates"])
-    print(f"  📊 {len(filtered)} showtime(s) after filters")
+            if movie_info["name"] == "Unknown":
+                movie_info = parse_movie_info(data)
 
-    new_state = build_state(filtered, all_dates)
-    old_state = load_state()
+            movie_dates.extend(parse_dates(data))
+            movie_shows.extend(parse_shows(data))
 
-    changes = []
-    if old_state:
-        changes = detect_changes(old_state, new_state)
+        if not movie_shows:
+            print("  ❌ No current showtimes found for this title.")
+            continue
 
+        print(f"  🎬 {movie_info['name']} ({movie_info['language']})")
+
+        filtered = filter_shows(movie_shows, CONFIG["theatre"], CONFIG["time_period"], CONFIG["dates"])
+        print(f"  📊 {len(filtered)} showtime(s) matching criteria filters")
+
+        # Append data to global runtime collection
+        append_to_state(new_state, event_code, filtered, movie_dates)
+
+        # Check for modifications against the last execution cycle
+        if old_state:
+            changes = detect_movie_changes(old_state, new_state, event_code)
+            if changes:
+                print(f"  ⚡ {len(changes)} update(s) caught!")
+                send_telegram_message(changes, movie_info, movie_url)
+            else:
+                print("  ✅ No structural updates caught since the last run cycle.")
+
+    # Commit unified tracking data state at completion
     save_state(new_state)
-
-    if changes:
-        print(f"\n  ⚡ {len(changes)} change(s) detected:")
-        for c in changes:
-            print(f"     {c}")
-        send_telegram_message(
-            f"BMS Alert: {movie_info['name']} - {len(changes)} change(s)",
-            changes, filtered, movie_info,
-        )
-    else:
-        print("  ✅ No changes since last check.")
-
-    print("\n  Done.")
+    print("\nBatch Operations Finished.")
 
 
 if __name__ == "__main__":
