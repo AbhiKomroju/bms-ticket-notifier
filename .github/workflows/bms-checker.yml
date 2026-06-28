@@ -22,9 +22,7 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Install dependencies
-        # Bypasses the frozen lockfile to cleanly add curl_cffi and requests to the global scope
-        run: uv pip install --system requests curl_cffi
+      # We completely removed the manual install step here!
 
       - name: Run checker
         env:
@@ -34,7 +32,8 @@ jobs:
           BMS_DATES: ${{ vars.BMS_DATES }}
           BMS_THEATRE: ${{ vars.BMS_THEATRE }}
           BMS_TIME: ${{ vars.BMS_TIME }}
-        run: uv run main.py
+        # --with injects the dependencies directly into an isolated sandbox for main.py
+        run: uv run --with requests --with curl_cffi main.py
 
       - name: Commit updated state
         run: |
