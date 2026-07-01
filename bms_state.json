@@ -1,0 +1,152 @@
+{
+  "shows": {
+    "ET00452034|PRHN|251802|20260717|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "08:00 AM",
+      "date": "20260717",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "0",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|252356|20260717|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "08:00 AM",
+      "date": "20260717",
+      "cat": "EXECUTIVE",
+      "price": "295.00",
+      "status": "2",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|252357|20260717|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "08:00 AM",
+      "date": "20260717",
+      "cat": "EXECUTIVE",
+      "price": "295.00",
+      "status": "2",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|252364|20260717|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "11:20 AM",
+      "date": "20260717",
+      "cat": "EXECUTIVE",
+      "price": "295.00",
+      "status": "2",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|251803|20260717|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "11:35 AM",
+      "date": "20260717",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|251804|20260717|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "03:10 PM",
+      "date": "20260717",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|251805|20260717|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "06:45 PM",
+      "date": "20260717",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1",
+      "event": "ET00452034"
+    },
+    "ET00452034|PRHN|251806|20260717|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "10:20 PM",
+      "date": "20260717",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "1",
+      "event": "ET00452034"
+    },
+    "ET00489559|PRHN|252627|20260701|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "11:30 AM",
+      "date": "20260701",
+      "cat": "EXECUTIVE",
+      "price": "250.00",
+      "status": "3",
+      "event": "ET00489559"
+    },
+    "ET00489559|PRHN|252623|20260701|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "02:05 PM",
+      "date": "20260701",
+      "cat": "EXECUTIVE",
+      "price": "250.00",
+      "status": "3",
+      "event": "ET00489559"
+    },
+    "ET00489559|PRHN|252607|20260701|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "03:05 PM",
+      "date": "20260701",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "3",
+      "event": "ET00489559"
+    },
+    "ET00489559|PRHN|252624|20260701|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "05:00 PM",
+      "date": "20260701",
+      "cat": "EXECUTIVE",
+      "price": "250.00",
+      "status": "3",
+      "event": "ET00489559"
+    },
+    "ET00489559|PRHN|252609|20260701|GOLD": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "08:35 PM",
+      "date": "20260701",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "3",
+      "event": "ET00489559"
+    },
+    "ET00489559|PRHN|252631|20260701|EXECUTIVE": {
+      "venue": "Prasads Multiplex: Hyderabad",
+      "time": "10:50 PM",
+      "date": "20260701",
+      "cat": "EXECUTIVE",
+      "price": "250.00",
+      "status": "3",
+      "event": "ET00489559"
+    }
+  },
+  "dates": {
+    "ET00452034|20260717": "BOOKABLE",
+    "ET00452034|20260718": "AVAILABLE",
+    "ET00452034|20260719": "AVAILABLE",
+    "ET00452034|20260720": "AVAILABLE",
+    "ET00452034|20260721": "AVAILABLE",
+    "ET00452034|20260722": "AVAILABLE",
+    "ET00452034|20260723": "AVAILABLE",
+    "ET00452034|20260724": "AVAILABLE",
+    "ET00452034|20260725": "AVAILABLE",
+    "ET00452034|20260726": "AVAILABLE",
+    "ET00452034|20260727": "AVAILABLE",
+    "ET00452034|20260728": "AVAILABLE",
+    "ET00452034|20260729": "AVAILABLE",
+    "ET00489559|20260701": "BOOKABLE",
+    "ET00489559|20260702": "AVAILABLE",
+    "ET00489559|20260703": "AVAILABLE",
+    "ET00489559|20260704": "AVAILABLE",
+    "ET00489559|20260705": "AVAILABLE",
+    "ET00489559|20260706": "NOT_OPEN",
+    "ET00489559|20260707": "NOT_OPEN"
+  }
+}
