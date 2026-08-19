@@ -71,6 +71,42 @@
       "price": "295.00",
       "status": "1",
       "event": "ET00452034"
+    },
+    "ET00502386|AMBH|116890|20260821|SEMI RECLINER": {
+      "venue": "AMB Cinemas: Gachibowli",
+      "time": "11:00 AM",
+      "date": "20260821",
+      "cat": "SEMI RECLINER",
+      "price": "350.00",
+      "status": "3",
+      "event": "ET00502386"
+    },
+    "ET00502386|AMBH|116872|20260821|PLATINUM": {
+      "venue": "AMB Cinemas: Gachibowli",
+      "time": "04:05 PM",
+      "date": "20260821",
+      "cat": "PLATINUM",
+      "price": "350.00",
+      "status": "0",
+      "event": "ET00502386"
+    },
+    "ET00502386|AMBH|116872|20260821|GOLD": {
+      "venue": "AMB Cinemas: Gachibowli",
+      "time": "04:05 PM",
+      "date": "20260821",
+      "cat": "GOLD",
+      "price": "295.00",
+      "status": "3",
+      "event": "ET00502386"
+    },
+    "ET00502386|AMBH|116872|20260821|LOUNGERS": {
+      "venue": "AMB Cinemas: Gachibowli",
+      "time": "04:05 PM",
+      "date": "20260821",
+      "cat": "LOUNGERS",
+      "price": "295.00",
+      "status": "3",
+      "event": "ET00502386"
     }
   },
   "dates": {
@@ -96,6 +132,13 @@
     "ET00475569|20260707": "AVAILABLE",
     "ET00475569|20260708": "AVAILABLE",
     "ET00475569|20260709": "AVAILABLE",
-    "ET00475569|20260710": "NOT_OPEN"
+    "ET00475569|20260710": "NOT_OPEN",
+    "ET00502386|20260821": "BOOKABLE",
+    "ET00502386|20260822": "AVAILABLE",
+    "ET00502386|20260823": "AVAILABLE",
+    "ET00502386|20260824": "NOT_OPEN",
+    "ET00502386|20260825": "NOT_OPEN",
+    "ET00502386|20260826": "NOT_OPEN",
+    "ET00502386|20260827": "NOT_OPEN"
   }
 }
