@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+venv
+.env
+
+# Editor/OS clutter
+.vscode/
+.DS_Store
+
+# NOTE: bms_state.json and bms_schedule.json are intentionally NOT
+# ignored — the GitHub Actions workflow commits them back to the repo
+# so state persists across scheduled runs. Don't add them here.

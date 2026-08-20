@@ -1,0 +1,78 @@
+name: BMS Ticket Checker
+
+on:
+  schedule:
+    # Ticks every 10 minutes, but main.py's randomized scheduling gate only
+    # does real work on a subset of these ticks — spaced BMS_MIN_INTERVAL to
+    # BMS_MAX_INTERVAL minutes apart (default 20-40). Skipped ticks exit
+    # before any request to BMS, so this doesn't mean checking every 10 min.
+    # Tighten to */5 for finer-grained randomization, or widen (e.g. */15)
+    # to spend fewer GitHub Actions minutes on no-op ticks — either way the
+    # actual check cadence is still controlled by BMS_MIN/MAX_INTERVAL below.
+    - cron: "*/10 * * * *"
+  workflow_dispatch: # Manual trigger button — always runs immediately,
+    # bypassing the randomized gate (see BMS_FORCE_RUN below).
+
+# Prevents two runs from overlapping and racing to push bms_state.json.
+# New runs wait for the current one to finish instead of running in parallel.
+concurrency:
+  group: bms-ticket-checker
+  cancel-in-progress: false
+
+jobs:
+  check-tickets:
+    name: Check tickets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+
+      # No manual install step needed — `uv run --with` sandboxes the
+      # dependencies for this run only.
+      - name: Run checker
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BMS_URL: ${{ vars.BMS_URL }}
+          BMS_DATES: ${{ vars.BMS_DATES }}
+          BMS_THEATRE: ${{ vars.BMS_THEATRE }}
+          BMS_SCREEN: ${{ vars.BMS_SCREEN }}
+          BMS_TIME: ${{ vars.BMS_TIME }}
+          # Set the BMS_DEBUG repo variable to "1" temporarily if you need
+          # to capture raw-response logs again — leave unset for normal runs.
+          BMS_DEBUG: ${{ vars.BMS_DEBUG }}
+          # Randomized check interval in minutes. Defaults to 20-40 if these
+          # repo variables are unset. Set BMS_MIN_INTERVAL/BMS_MAX_INTERVAL
+          # to e.g. 5/10 for more aggressive checking, or widen them to look
+          # less like automated polling.
+          BMS_MIN_INTERVAL: ${{ vars.BMS_MIN_INTERVAL }}
+          BMS_MAX_INTERVAL: ${{ vars.BMS_MAX_INTERVAL }}
+          # Manual "Run workflow" clicks always execute immediately,
+          # ignoring the randomized gate — scheduled ticks respect it.
+          BMS_FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: uv run --with requests --with curl_cffi main.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # bms_schedule.json changes on EVERY real run (not just when a
+          # notification fires), and on skipped/gated ticks neither file
+          # changes at all, so this stays a no-op most ticks either way.
+          git add bms_state.json bms_schedule.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update bms state/schedule [skip ci]"
+            # Rebase onto the latest remote state in case another run pushed
+            # in the meantime, then push. Self-heals instead of failing red.
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi
