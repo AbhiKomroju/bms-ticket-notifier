@@ -1,14 +1,14 @@
-
 name: BMS Ticket Checker
 
 on:
   schedule:
-    # Runs every 10 minutes, shifted away from the start of the hour.
+    # Shift the schedule away from minute 0 to reduce the chance of GitHub
+    # Actions scheduler congestion. GitHub can still delay or drop scheduled runs.
     - cron: "3,13,23,33,43,53 * * * *"
 
   workflow_dispatch:
-    # Manual runs bypass the randomized scheduling gate.
-    
+    # Manual runs bypass the randomized Python scheduling gate.
+
 concurrency:
   group: bms-ticket-checker
   cancel-in-progress: false
@@ -43,23 +43,24 @@ jobs:
           BMS_TIME: ${{ vars.BMS_TIME }}
 
           BMS_DEBUG: ${{ vars.BMS_DEBUG }}
-
           BMS_MIN_INTERVAL: ${{ vars.BMS_MIN_INTERVAL }}
           BMS_MAX_INTERVAL: ${{ vars.BMS_MAX_INTERVAL }}
 
           BMS_FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
 
         run: |
-          echo "=================================="
+          echo "============================================================"
           echo "BMS Ticket Checker"
-          echo "UTC Time: $(date -u)"
-          echo "IST Time: $(TZ=Asia/Kolkata date)"
+          echo "UTC time: $(date -u '+%Y-%m-%d %H:%M:%S %Z')"
+          echo "IST time: $(TZ=Asia/Kolkata date '+%Y-%m-%d %H:%M:%S %Z')"
           echo "Trigger: ${{ github.event_name }}"
-          echo "=================================="
+          echo "Branch: ${GITHUB_REF_NAME}"
+          echo "============================================================"
 
           uv run --with requests --with curl_cffi main.py
 
       - name: Commit updated state
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -67,12 +68,10 @@ jobs:
           git add bms_state.json bms_schedule.json
 
           if ! git diff --cached --quiet; then
-            git commit -m "chore: update bms state/schedule [skip ci]"
-
+            git commit -m "chore: update BMS state and schedule [skip ci]"
             git pull --rebase origin "${GITHUB_REF_NAME}"
             git push
-
-            echo "State successfully committed and pushed."
+            echo "State and schedule successfully committed and pushed."
           else
             echo "No state changes to commit."
           fi
