@@ -140,6 +140,168 @@ def parse_bms_url(url):
     return result
 
 
+def split_csv_values(raw_value):
+    """Split a comma-separated environment variable into non-empty values."""
+    return [value.strip() for value in (raw_value or "").split(",") if value.strip()]
+
+
+def display_date(date_code):
+    """Convert a BMS YYYYMMDD date code into a readable date."""
+    if not date_code:
+        return "Not specified"
+    try:
+        return datetime.strptime(str(date_code), "%Y%m%d").strftime("%d %b %Y")
+    except (TypeError, ValueError):
+        return str(date_code)
+
+
+def get_movie_name_from_url(movie_url):
+    """Get a readable movie name from the /movies/<city>/<movie>/ URL path."""
+    try:
+        parts = urlparse(movie_url).path.strip("/").split("/")
+        if "movies" in parts:
+            idx = parts.index("movies")
+            if len(parts) > idx + 2:
+                return parts[idx + 2].replace("-", " ").title()
+    except Exception:
+        pass
+    return "Unknown Movie"
+
+
+def get_dates_for_movie(url_date):
+    """Resolve the dates that will be requested for a movie URL."""
+    configured_dates = split_csv_values(CONFIG["dates"])
+    if configured_dates:
+        return configured_dates, "BMS_DATES variable"
+    if url_date:
+        return [url_date], "date in BMS_URL"
+    return [""], "BMS default (no date supplied)"
+
+
+def log_filter_configuration(urls):
+    """Print all configured filters and the movie URLs they apply to."""
+    theatre_keywords = split_csv_values(CONFIG["theatre"])
+    screen_keywords = split_csv_values(CONFIG["screen"])
+    time_periods = split_csv_values(CONFIG["time_period"])
+    configured_dates = split_csv_values(CONFIG["dates"])
+
+    print("\n" + "=" * 64)
+    print("BMS CONFIGURATION — FILTERS THAT WILL BE USED")
+    print("=" * 64)
+    print("Theatre keywords : " + (", ".join(theatre_keywords) if theatre_keywords else "ALL THEATRES"))
+    print("Screen keywords  : " + (", ".join(screen_keywords) if screen_keywords else "ALL SCREENS"))
+    if configured_dates:
+        formatted_dates = [f"{date} ({display_date(date)})" for date in configured_dates]
+        print("Date filters     : " + ", ".join(formatted_dates))
+    else:
+        print("Date filters     : From each movie URL (or BMS default if URL has no date)")
+    print("Time filters     : " + (", ".join(time_periods) if time_periods else "ALL TIMES"))
+    print("Filter logic     : OR within each filter; AND between theatre/screen/date/time")
+    print("Matching         : Case-insensitive substring matching for theatre and screen keywords")
+
+    print("\nMovies configured:")
+    for index, movie_url in enumerate(urls, start=1):
+        parsed = parse_bms_url(movie_url)
+        movie_name = get_movie_name_from_url(movie_url)
+        movie_dates, date_source = get_dates_for_movie(parsed.get("date_code", ""))
+        date_labels = ", ".join(
+            f"{date or 'default'} ({display_date(date)})" for date in movie_dates
+        )
+        print(f"  {index}. Movie       : {movie_name}")
+        print(f"     City          : {parsed.get('region_slug') or 'Unknown'}")
+        print(f"     Event code    : {parsed.get('event_code') or 'Invalid / missing'}")
+        print(f"     Dates to query: {date_labels} [{date_source}]")
+    print("=" * 64 + "\n")
+
+
+def log_returned_inventory(shows, movie_dates, theatre_keywords, screen_keywords):
+    """Log BMS-returned theatres/screens and show which keywords match them."""
+    returned_theatres = sorted({show.venue_name for show in shows if show.venue_name})
+    returned_screens = sorted({show.screen_attr for show in shows if show.screen_attr})
+
+    print("\nBMS RESPONSE INVENTORY")
+    print("-" * 48)
+    print(f"Theatres returned ({len(returned_theatres)}):")
+    if returned_theatres:
+        for theatre in returned_theatres:
+            matched_keywords = [
+                keyword for keyword in theatre_keywords
+                if keyword.lower() in theatre.lower()
+            ]
+            if matched_keywords:
+                match_note = f" | matched keyword(s): {', '.join(matched_keywords)}"
+            elif theatre_keywords:
+                match_note = " | no configured theatre keyword matched"
+            else:
+                match_note = " | no theatre filter configured; eligible"
+            print(f"  • {theatre}{match_note}")
+    else:
+        print("  • No theatres were found in the BMS response.")
+
+    print("\nConfigured theatre keyword matches:")
+    if theatre_keywords:
+        for keyword in theatre_keywords:
+            matching_theatres = [
+                theatre for theatre in returned_theatres
+                if keyword.lower() in theatre.lower()
+            ]
+            print(f"  • {keyword!r}: {len(matching_theatres)} theatre(s) matched")
+            for theatre in matching_theatres:
+                print(f"      - {theatre}")
+    else:
+        print("  • No theatre filter configured; all theatres are eligible.")
+
+    print(f"\nScreen attributes returned ({len(returned_screens)}):")
+    if returned_screens:
+        for screen in returned_screens:
+            matched_keywords = [
+                keyword for keyword in screen_keywords
+                if keyword.lower() in screen.lower()
+            ]
+            if matched_keywords:
+                match_note = f" | matched keyword(s): {', '.join(matched_keywords)}"
+            elif screen_keywords:
+                match_note = " | no configured screen keyword matched this attribute"
+            else:
+                match_note = " | no screen filter configured; eligible"
+            print(f"  • {screen}{match_note}")
+    else:
+        print("  • No screen attributes were populated by BMS.")
+
+    print("\nConfigured screen keyword matches (screen attribute OR show time):")
+    if screen_keywords:
+        for keyword in screen_keywords:
+            matching_shows = [
+                show for show in shows
+                if keyword.lower() in f"{show.screen_attr} {show.time}".lower()
+            ]
+            print(f"  • {keyword!r}: {len(matching_shows)} showtime(s) matched")
+            for show in matching_shows[:10]:
+                print(
+                    f"      - {show.venue_name} | {show.screen_attr or 'No screen attribute'}"
+                    f" | {show.time} | {show.date_code or 'Date unknown'}"
+                )
+            if len(matching_shows) > 10:
+                print(f"      - ...and {len(matching_shows) - 10} more")
+    else:
+        print("  • No screen filter configured; all screens are eligible.")
+
+    print("\nDate information returned by BMS:")
+    if movie_dates:
+        unique_dates = {}
+        for item in movie_dates:
+            unique_dates[item.date_code] = item
+        for date_code in sorted(unique_dates):
+            item = unique_dates[date_code]
+            print(
+                f"  • {date_code} ({display_date(date_code)})"
+                f" | status: {item.status} | BMS style: {item.raw_style or 'not supplied'}"
+            )
+    else:
+        print("  • No date-selector information was found in the response.")
+    print("-" * 48)
+
+
 def resolve_region(slug):
     key = (slug or "").lower().strip()
     if key in REGION_MAP:
@@ -454,20 +616,31 @@ def send_telegram_message(changes, movie_info, movie_url):
         print(f"  ❌ Telegram request failed: {e}")
 
 
+
 def main():
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
     print(f"[{now_str}] BMS Multi-Ticket Checker Active (debug={'ON' if DEBUG else 'off'})")
 
-    urls = [u.strip() for u in CONFIG["url"].split(",") if u.strip()]
+    urls = split_csv_values(CONFIG["url"])
     if not urls:
         print("  ❌ No URLs found in BMS_URL environment variable.")
         sys.exit(1)
 
+    # Log filters before the randomized gate so even skipped GitHub Actions
+    # ticks show exactly which configuration is currently deployed.
+    log_filter_configuration(urls)
+
+    if MIN_INTERVAL_MIN < 0 or MAX_INTERVAL_MIN < 0 or MIN_INTERVAL_MIN > MAX_INTERVAL_MIN:
+        print(
+            "  ❌ Invalid randomized interval: "
+            f"BMS_MIN_INTERVAL={MIN_INTERVAL_MIN}, BMS_MAX_INTERVAL={MAX_INTERVAL_MIN}. "
+            "Both must be non-negative and MIN must be <= MAX."
+        )
+        sys.exit(1)
+
     # ── Randomized scheduling gate ──────────────────────────────────────
-    # The workflow's cron ticks on a tight fixed schedule (e.g. every 10-15
-    # min), but we only do real work on a randomly-chosen subset of those
-    # ticks, spaced MIN_INTERVAL-MAX_INTERVAL minutes apart. Skipped ticks
-    # exit here before any network call — cheap and doesn't touch state.
+    # The GitHub Actions cron starts this script on a fixed cadence. This
+    # gate decides whether this invocation makes a real BMS request.
     schedule = load_schedule()
     next_allowed_str = schedule.get("next_allowed_run")
     now = datetime.now()
@@ -475,12 +648,15 @@ def main():
         try:
             next_allowed = datetime.fromisoformat(next_allowed_str)
         except ValueError:
+            print(f"  ⚠️ Invalid next_allowed_run value in {SCHEDULE_FILE}: {next_allowed_str!r}")
             next_allowed = now
         if now < next_allowed:
             remaining = (next_allowed - now).total_seconds() / 60
-            print(f"  ⏭️  Not due yet — next check in ~{remaining:.1f} min "
-                  f"(scheduled for {next_allowed.strftime('%H:%M:%S')}). "
-                  f"Randomized interval: {MIN_INTERVAL_MIN}-{MAX_INTERVAL_MIN} min.")
+            print(
+                f"  ⏭️ Not due yet — next actual BMS check in ~{remaining:.1f} min "
+                f"(scheduled for {next_allowed.strftime('%Y-%m-%d %H:%M:%S')}). "
+                f"Randomized interval: {MIN_INTERVAL_MIN}-{MAX_INTERVAL_MIN} min."
+            )
             sys.exit(0)
     elif FORCE_RUN:
         print("  ⚡ BMS_FORCE_RUN=1 — bypassing the randomized schedule gate.")
@@ -493,53 +669,119 @@ def main():
 
     pending_notifications = []
 
-    for movie_url in urls:
-        print(f"\nProcessing Movie Link: {movie_url}")
+    theatre_keywords = split_csv_values(CONFIG["theatre"])
+    screen_keywords = split_csv_values(CONFIG["screen"])
+
+    for movie_index, movie_url in enumerate(urls, start=1):
         parsed = parse_bms_url(movie_url)
         event_code = parsed["event_code"]
         region_slug = parsed["region_slug"]
         url_date = parsed.get("date_code", "")
+        movie_name_from_url = get_movie_name_from_url(movie_url)
+
+        print("\n" + "=" * 64)
+        print(f"🎬 MOVIE {movie_index}/{len(urls)}: {movie_name_from_url}")
+        print(f"🔖 Event code: {event_code or 'Missing'}")
+        print(f"📍 City: {region_slug or 'Unknown'}")
+        print("=" * 64)
+
         if not event_code or not region_slug:
-            print(f"  ⚠️ Skipping invalid URL configuration layout.")
+            print("  ⚠️ Skipping invalid BMS URL: event code or city could not be parsed.")
             continue
 
         region_code, region_slug_r, lat, lon, geohash = resolve_region(region_slug)
-        raw_dates = CONFIG["dates"].strip()
-        if raw_dates:
-            date_list = [d.strip() for d in raw_dates.split(",") if d.strip()]
-        elif url_date:
-            date_list = [url_date]
-        else:
-            date_list = [""]
+        date_list, date_source = get_dates_for_movie(url_date)
+
+        print(f"📅 Dates that will be requested ({date_source}):")
+        for date_code in date_list:
+            print(f"  • {date_code or 'BMS default'} — {display_date(date_code)}")
 
         movie_shows = []
         movie_dates = []
-        movie_info = {"name": "Unknown", "language": ""}
+        movie_info = {"name": movie_name_from_url, "language": ""}
+        successful_date_requests = 0
 
-        for dc in date_list:
-            data = fetch_bms(event_code, dc, region_code, region_slug_r, lat, lon, geohash, movie_url)
+        for date_index, date_code in enumerate(date_list, start=1):
+            print("\n" + "-" * 56)
+            print(f"🌐 BMS REQUEST {date_index}/{len(date_list)}")
+            print(f"   Movie : {movie_name_from_url}")
+            print(f"   Event : {event_code}")
+            print(f"   Date  : {date_code or 'BMS default'} ({display_date(date_code)})")
+            print("-" * 56)
+
+            data = fetch_bms(
+                event_code,
+                date_code,
+                region_code,
+                region_slug_r,
+                lat,
+                lon,
+                geohash,
+                movie_url,
+            )
             if not data:
+                print(f"  ❌ No usable API response for requested date {date_code or 'BMS default'}.")
                 continue
-            if movie_info["name"] == "Unknown":
-                movie_info = parse_movie_info(data, movie_url)
-            movie_dates.extend(parse_dates(data))
-            movie_shows.extend(parse_shows(data))
+
+            successful_date_requests += 1
+            # The title is derived from the URL slug by parse_movie_info;
+            # parsing each response also refreshes the language/format label.
+            parsed_movie_info = parse_movie_info(data, movie_url)
+            if parsed_movie_info.get("name"):
+                movie_info["name"] = parsed_movie_info["name"]
+            if parsed_movie_info.get("language"):
+                movie_info["language"] = parsed_movie_info["language"]
+
+            date_results = parse_dates(data)
+            show_results = parse_shows(data)
+            movie_dates.extend(date_results)
+            movie_shows.extend(show_results)
+
+            print(f"  ✅ API response received for {display_date(date_code)}.")
+            print(f"  📊 Showtimes in this response: {len(show_results)}")
+
+            # Dates represented in the response's date selector.
+            response_date_codes = sorted({item.date_code for item in date_results if item.date_code})
+            print("  📅 Date-selector dates returned by BMS:")
+            if response_date_codes:
+                for returned_date in response_date_codes:
+                    matching_date_info = next(
+                        (item for item in date_results if item.date_code == returned_date),
+                        None,
+                    )
+                    status = matching_date_info.status if matching_date_info else "Unknown"
+                    print(f"     • {returned_date} ({display_date(returned_date)}) — {status}")
+            else:
+                print("     • No date-selector entries found.")
+
+            # Also show dates attached to the actual returned showtimes.
+            show_date_codes = sorted({show.date_code for show in show_results if show.date_code})
+            print("  🎟️ Show dates in returned showtimes:")
+            if show_date_codes:
+                for returned_date in show_date_codes:
+                    print(f"     • {returned_date} ({display_date(returned_date)})")
+            else:
+                print("     • No showtime date codes found.")
+
+        print("\n" + "=" * 56)
+        print(f"📌 MOVIE SUMMARY: {movie_info['name']}")
+        print(f"   Successful date requests : {successful_date_requests}/{len(date_list)}")
+        print(f"   Total showtimes received : {len(movie_shows)}")
+        print("=" * 56)
+
+        log_returned_inventory(
+            movie_shows,
+            movie_dates,
+            theatre_keywords,
+            screen_keywords,
+        )
 
         if not movie_shows:
-            print(f"  ❌ No current showtimes found for this target configuration.")
+            print("  ❌ No current showtimes found for this movie. Skipping state update for this movie.")
             continue
 
-        print(f"  🎬 {movie_info['name']} ({movie_info['language']})")
-
-        # Surface every distinct screen/audi name seen for this movie so you
-        # can copy the exact string into BMS_SCREEN without guessing.
-        seen_screens = sorted({s.screen_attr for s in movie_shows if s.screen_attr})
-        if seen_screens:
-            print(f"  🖥️  Screens seen: {', '.join(seen_screens)}")
-        elif DEBUG:
-            dbg("No screen_attr values populated on any show — check RAW API "
-                "RESPONSE above for where the screen/audi name actually lives.")
-
+        # Apply configured filters. The filter implementation is unchanged:
+        # OR within theatre/screen/time keyword lists, AND across filter types.
         filtered = filter_shows(
             movie_shows,
             CONFIG["theatre"],
@@ -547,19 +789,40 @@ def main():
             CONFIG["time_period"],
             CONFIG["dates"],
         )
-        print(f"  📊 {len(filtered)} showtime(s) matching criteria filters")
+
+        print("\nFILTER RESULTS")
+        print("-" * 48)
+        print(f"📥 Total showtimes received : {len(movie_shows)}")
+        print(f"✅ Showtimes matching filters: {len(filtered)}")
+        print(f"🚫 Showtimes excluded       : {len(movie_shows) - len(filtered)}")
+
+        if filtered:
+            print("\n✅ MATCHING SHOWTIMES:")
+            for show in filtered[:100]:
+                print(
+                    f"  • Theatre: {show.venue_name}"
+                    f" | Screen: {show.screen_attr or 'Not supplied by BMS'}"
+                    f" | Date: {show.date_code or 'Unknown'} ({display_date(show.date_code)})"
+                    f" | Time: {show.time or 'Unknown'}"
+                )
+            if len(filtered) > 100:
+                print(f"  • ...and {len(filtered) - 100} more matching showtimes.")
+        else:
+            print("⚠️ No showtimes passed all configured filters.")
+        print("-" * 48)
 
         append_to_state(new_state, event_code, filtered, movie_dates)
 
         if old_state:
             changes = detect_movie_changes(old_state, new_state, event_code)
             if changes:
+                print(f"  ⚡ {len(changes)} update(s) detected for {movie_info['name']}.")
                 pending_notifications.append((changes, movie_info, movie_url))
             else:
                 print("  ✅ No structural updates caught since the last run cycle.")
 
     save_state(new_state)
-    print("\nState Committed to disk successfully.")
+    print("\n✅ State committed to disk successfully.")
 
     # Pick the next randomized check time now that a real run has happened.
     next_interval = random.randint(MIN_INTERVAL_MIN, MAX_INTERVAL_MIN)
@@ -569,14 +832,16 @@ def main():
         "next_allowed_run": next_run.isoformat(),
         "interval_minutes": next_interval,
     })
-    print(f"⏱️  Next check randomized for ~{next_interval} min from now "
-          f"(~{next_run.strftime('%H:%M:%S')}).")
+    print(
+        f"⏱️ Next actual BMS check randomized for ~{next_interval} minutes "
+        f"(target time: {next_run.strftime('%Y-%m-%d %H:%M:%S')})."
+    )
 
     for changes, movie_info, movie_url in pending_notifications:
-        print(f"  ⚡ {len(changes)} update(s) caught for {movie_info['name']}!")
+        print(f"  ⚡ Sending {len(changes)} update(s) for {movie_info['name']}...")
         send_telegram_message(changes, movie_info, movie_url)
 
-    print("\nBatch Operations Finished.")
+    print("\nBatch operations finished.")
 
 
 if __name__ == "__main__":
